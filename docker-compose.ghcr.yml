@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  curatarr:
+    image: ghcr.io/samrenfrew/curatarr:${CURATARR_TAG:-latest}
+    container_name: curatarr
+    restart: "no"
+    volumes:
+      # Config directory (required) - contains config.yml, tuning.yml, trakt.yml, etc.
+      - ./config:/app/config:rw
+      # Persistent cache (speeds up subsequent runs)
+      - ./cache:/app/cache
+      # Logs
+      - ./logs:/app/logs
+      # External recommendations output
+      - ./recommendations:/app/recommendations
+    environment:
+      - TZ=${TZ:-America/New_York}
+      # Optional overrides for sensitive values in config/config.yml
+      - PLEX_URL=${PLEX_URL:-}
+      - PLEX_TOKEN=${PLEX_TOKEN:-}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}

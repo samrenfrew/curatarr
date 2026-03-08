@@ -65,7 +65,7 @@ cd curatarr
 .\run.ps1   # Setup wizard runs on first launch
 ```
 
-### Docker
+### Docker (Local Build)
 ```bash
 git clone https://github.com/OrchestratedChaos/curatarr.git
 cd curatarr
@@ -78,6 +78,29 @@ Or manually configure:
 cp config/config.example.yml config/config.yml
 # Edit config/config.yml with your details
 docker compose up --build
+```
+
+### Docker (GHCR Image)
+
+Published image:
+```text
+ghcr.io/samrenfrew/curatarr
+```
+
+Use the included compose example:
+```bash
+git clone https://github.com/OrchestratedChaos/curatarr.git
+cd curatarr
+docker compose -f docker-compose.ghcr.yml up
+```
+
+Optional `.env` example (for compose variable substitution):
+```bash
+CURATARR_TAG=latest
+TZ=America/New_York
+PLEX_URL=http://your-plex-server:32400
+PLEX_TOKEN=YOUR_PLEX_TOKEN
+TMDB_API_KEY=YOUR_TMDB_API_KEY
 ```
 
 First run takes 5-10 minutes to analyze your library. After that, it's fast.
@@ -149,6 +172,13 @@ For Docker or CI environments, you can use environment variables instead of stor
 | `TMDB_API_KEY` | `tmdb.api_key` |
 
 Environment variables take precedence over config file values.
+
+For `docker-compose.ghcr.yml`, these compose variables are also supported:
+
+| Variable | Purpose |
+|----------|---------|
+| `CURATARR_TAG` | Image tag (for example `latest` or `v2.8.19`) |
+| `TZ` | Container timezone (for example `America/New_York`) |
 
 ### Per-User Preferences
 ```yaml
