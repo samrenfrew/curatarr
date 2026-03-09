@@ -219,6 +219,19 @@ def _auto_migrate_if_needed(config: dict, config_path: str) -> dict:
     from utils.migrate_config import needs_migration, migrate_config
 
     if needs_migration(config):
+        config_dir = os.path.dirname(config_path) or '.'
+        module_files = ['tuning.yml', 'trakt.yml', 'radarr.yml', 'sonarr.yml']
+        existing_modules = [name for name in module_files if os.path.exists(os.path.join(config_dir, name))]
+
+        # If modular files already exist, avoid overwriting them.
+        # Keep loading as-is and let module files override root config sections.
+        if existing_modules:
+            print(
+                "\033[93mDetected legacy root sections, but modular config files already exist "
+                f"({', '.join(existing_modules)}). Skipping auto-migration to avoid overwriting.\033[0m"
+            )
+            return config
+
         print("\033[93mDetected legacy config format, migrating to modular files...\033[0m")
         result = migrate_config(config_path)
         if result['migrated']:
