@@ -5,6 +5,23 @@
 
 set -e  # Exit on error
 
+# Safe helper for reading YAML values without aborting script under set -e
+safe_yaml_get() {
+    local py_expr="$1"
+    local default_value="$2"
+    local config_file="${3:-config/config.yml}"
+
+    python3 -c "
+import yaml
+try:
+    data = yaml.safe_load(open('$config_file')) or {}
+    value = ($py_expr)
+    print(value)
+except Exception:
+    print('$default_value')
+" 2>/dev/null || echo "$default_value"
+}
+
 # Parse arguments
 DEBUG_FLAG=""
 HUNTARR_ONLY=""
@@ -89,7 +106,7 @@ check_for_updates() {
 
     # Check if auto_update is enabled in config
     if [ -f "config/config.yml" ]; then
-        AUTO_UPDATE=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('general', {}).get('auto_update', False))" 2>/dev/null)
+        AUTO_UPDATE=$(safe_yaml_get "data.get('general', {}).get('auto_update', False)" "False")
 
         if [ "$AUTO_UPDATE" = "True" ]; then
             echo -e "${CYAN}Checking for updates...${NC}"
@@ -255,7 +272,7 @@ show_integration_status() {
     echo -e "${CYAN}Integrations:${NC}"
 
     # Plex - always required
-    PLEX_URL=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('plex', {}).get('url', ''))" 2>/dev/null)
+    PLEX_URL=$(safe_yaml_get "data.get('plex', {}).get('url', '')" "")
     if [ -n "$PLEX_URL" ] && [ "$PLEX_URL" != "None" ]; then
         echo -e "  ${GREEN}✓${NC} Plex"
     else
@@ -263,7 +280,7 @@ show_integration_status() {
     fi
 
     # TMDB - always required
-    TMDB_KEY=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('tmdb', {}).get('api_key', ''))" 2>/dev/null)
+    TMDB_KEY=$(safe_yaml_get "data.get('tmdb', {}).get('api_key', '')" "")
     if [ -n "$TMDB_KEY" ] && [ "$TMDB_KEY" != "None" ]; then
         echo -e "  ${GREEN}✓${NC} TMDB"
     else
@@ -275,16 +292,21 @@ show_integration_status() {
         TRAKT_STATUS=$(python3 -c "
 import yaml
 import os
-trakt = yaml.safe_load(open('config/trakt.yml'))
-enabled = trakt.get('enabled', False)
-has_token = bool(trakt.get('access_token'))
-if enabled and has_token:
-    print('authenticated')
-elif enabled:
-    print('enabled_no_auth')
-else:
+try:
+    trakt = yaml.safe_load(open('config/trakt.yml')) or {}
+    if not isinstance(trakt, dict):
+        trakt = {}
+    enabled = trakt.get('enabled', False)
+    has_token = bool(trakt.get('access_token'))
+    if enabled and has_token:
+        print('authenticated')
+    elif enabled:
+        print('enabled_no_auth')
+    else:
+        print('disabled')
+except Exception:
     print('disabled')
-" 2>/dev/null)
+" 2>/dev/null || echo "disabled")
     else
         TRAKT_STATUS="disabled"
     fi
@@ -302,7 +324,7 @@ else:
     esac
 
     # External Recommendations - optional (defaults to enabled)
-    EXT_ENABLED=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('external_recommendations', {}).get('enabled', True))" 2>/dev/null)
+    EXT_ENABLED=$(safe_yaml_get "((data.get('external_recommendations') if isinstance(data.get('external_recommendations'), dict) else {'enabled': data.get('external_recommendations')}) or {}).get('enabled', True)" "True")
     if [ "$EXT_ENABLED" = "True" ]; then
         echo -e "  ${GREEN}✓${NC} External Recommendations"
     else
@@ -372,7 +394,7 @@ main() {
 
     # Generate external recommendations (watchlist) or huntarr-only
     EXT_CHECK="true"
-    EXT_ENABLED=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('external_recommendations', {}).get('enabled', True))" 2>/dev/null)
+    EXT_ENABLED=$(safe_yaml_get "((data.get('external_recommendations') if isinstance(data.get('external_recommendations'), dict) else {'enabled': data.get('external_recommendations')}) or {}).get('enabled', True)" "True")
     if [ "$EXT_ENABLED" = "False" ]; then
         # Still run if huntarr-only even if external_recommendations disabled
         if [ -z "$HUNTARR_ONLY" ]; then
