@@ -437,6 +437,29 @@ class TestModularConfigLoading:
         finally:
             shutil.rmtree(config_dir)
 
+    def test_skips_auto_migration_when_modules_exist(self):
+        import shutil
+        config_dir = tempfile.mkdtemp()
+        try:
+            config_path = os.path.join(config_dir, 'config.yml')
+            with open(config_path, 'w') as f:
+                f.write("plex:\n  url: http://localhost:32400\nmovies:\n  limit_results: 50\n")
+
+            tuning_path = os.path.join(config_dir, 'tuning.yml')
+            original_tuning = "movies:\n  limit_results: 200\n"
+            with open(tuning_path, 'w') as f:
+                f.write(original_tuning)
+
+            result = load_config(config_path)
+
+            # Existing module file should win and should not be overwritten by migration.
+            assert result['movies']['limit_results'] == 200
+            with open(tuning_path, 'r') as f:
+                current_tuning = f.read()
+            assert current_tuning == original_tuning
+        finally:
+            shutil.rmtree(config_dir)
+
 
 class TestConfigMigration:
     """Tests for config migration functionality"""

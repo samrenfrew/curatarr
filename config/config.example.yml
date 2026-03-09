@@ -35,11 +35,55 @@ users:
       # Content ratings: Movies (G < PG < PG-13 < R < NC-17)
       #                  TV (TV-Y < TV-Y7 < TV-G < TV-PG < TV-14 < TV-MA)
 
+# Household streaming services (for external watchlist categorization)
+# Supported examples: netflix, disney_plus, hulu, amazon_prime, max, apple_tv_plus, paramount_plus, peacock
+streaming_services: []
+
 # General Settings
 general:
   plex_only: true  # Only recommend from Plex library
+  limit_plex_results: null  # Optional global override for collection size (null = 50 movies / 20 TV)
+  confirm_operations: false  # Ask before labeling/collection updates
+  randomize_recommendations: true
+  normalize_counters: true
+  show_summary: false
+  show_genres: true
+  show_cast: false
+  show_director: false
+  show_language: false
+  show_rating: false
+  show_imdb_link: false
+  exclude_genre: ""  # Comma-separated global exclusions, e.g. "horror, documentary"
   log_retention_days: 7
   auto_update: true
+
+# Recommendation quality filters (applies to internal Plex recommendations)
+quality_filters:
+  min_rating: 0.0
+  min_vote_count: 0
+
+# Collection behavior
+collections:
+  add_label: true
+  label_name: Recommended
+  append_usernames: true
+  private_collections: true
+  stale_removal_days: 7
+  # Optional custom titles. ${user} is always replaced with display_name/username.
+  # If omitted, Curatarr uses default titles.
+  movie_collection_title: null  # Example: "Movie recommendations for ${user}"
+  tv_collection_title: null     # Example: "TV picks for ${user}"
+
+# External recommendations (content not in Plex)
+external_recommendations:
+  enabled: true
+  movie_limit: 50
+  show_limit: 20
+  min_relevance_score: 0.65
+  auto_open_html: false
+  min_votes: 50
+  max_iterations: 5
+  language: null  # ISO-639-1 code like "en", or null for any
 
 # Huntarr: Find missing/upcoming movies from collections
 huntarr:
@@ -55,7 +99,7 @@ logging:
 # =============================================================================
 # For advanced configuration, create these optional files alongside config.yml:
 #
-#   tuning.yml    - Display options, weights, quality filters, scoring params
+#   tuning.yml    - Weights and scoring behavior only
 #   trakt.yml     - Trakt.tv integration (sync lists, import watchlist)
 #   radarr.yml    - Radarr integration (auto-add movies)
 #   sonarr.yml    - Sonarr integration (auto-add shows)

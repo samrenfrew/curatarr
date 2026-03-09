@@ -891,8 +891,33 @@ general:
   auto_update: true
   log_retention_days: 7
 
+quality_filters:
+  min_rating: 0.0
+  min_vote_count: 0
+
+collections:
+  add_label: true
+  label_name: Recommended
+  append_usernames: true
+  private_collections: true
+  stale_removal_days: 7
+  movie_collection_title: null
+  tv_collection_title: null
+
+external_recommendations:
+  enabled: true
+  movie_limit: 50
+  show_limit: 20
+  min_relevance_score: 0.65
+  auto_open_html: false
+  min_votes: 50
+  max_iterations: 5
+  language: null
+
 # Huntarr: Find missing movies from your collections
-huntarr: $huntarrEnabled
+huntarr:
+  sequel_huntarr: $huntarrEnabled
+  horizon_huntarr: $huntarrEnabled
 "@
 
     $configContent | Out-File -FilePath "config/config.yml" -Encoding UTF8

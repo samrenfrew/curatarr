@@ -457,6 +457,51 @@ class TestBaseRecommenderInit:
         mock_warn.assert_called()
 
 
+class TestBaseRecommenderCollectionNaming:
+    """Tests for collection title template/default behavior."""
+
+    @patch('recommenders.base.init_plex')
+    @patch('recommenders.base.get_configured_users')
+    @patch('recommenders.base.get_tmdb_config')
+    @patch('recommenders.base.load_config')
+    @patch('os.makedirs')
+    def test_custom_template_replaces_user_even_when_append_disabled(self, mock_makedirs, mock_load, mock_tmdb, mock_users, mock_plex):
+        mock_load.return_value = {
+            'plex': {'url': 'http://localhost', 'token': 'abc'},
+            'general': {},
+            'weights': {'genre': 0.5, 'actor': 0.5},
+            'collections': {
+                'append_usernames': False,
+                'movie_collection_title': 'Movie recommendations for ${user}',
+            },
+        }
+        mock_users.return_value = {'plex_users': [], 'managed_users': ['jason'], 'admin_user': 'admin'}
+        mock_tmdb.return_value = {'use_keywords': True, 'api_key': 'key'}
+        mock_plex.return_value = Mock()
+
+        recommender = ConcreteRecommender('/path/to/config.yml', single_user='jason')
+        assert recommender._build_collection_name('jason', 'Jason') == 'Movie recommendations for Jason'
+
+    @patch('recommenders.base.init_plex')
+    @patch('recommenders.base.get_configured_users')
+    @patch('recommenders.base.get_tmdb_config')
+    @patch('recommenders.base.load_config')
+    @patch('os.makedirs')
+    def test_default_title_without_usernames(self, mock_makedirs, mock_load, mock_tmdb, mock_users, mock_plex):
+        mock_load.return_value = {
+            'plex': {'url': 'http://localhost', 'token': 'abc'},
+            'general': {},
+            'weights': {'genre': 0.5, 'actor': 0.5},
+            'collections': {'append_usernames': False},
+        }
+        mock_users.return_value = {'plex_users': [], 'managed_users': ['jason'], 'admin_user': 'admin'}
+        mock_tmdb.return_value = {'use_keywords': True, 'api_key': 'key'}
+        mock_plex.return_value = Mock()
+
+        recommender = ConcreteRecommender('/path/to/config.yml', single_user='jason')
+        assert recommender._build_collection_name('jason', 'Jason') == '🎬 Recommended'
+
+
 class TestBaseRecommenderGetUserContext:
     """Tests for BaseRecommender._get_user_context method."""
 

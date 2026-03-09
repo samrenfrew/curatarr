@@ -102,6 +102,7 @@ from .cache import (
 # Label utilities
 from .labels import (
     build_label_name,
+    build_private_collection_label,
     categorize_labeled_items,
     remove_labels_from_items,
     add_labels_to_items,
@@ -293,6 +294,7 @@ __all__ = [
     'save_watched_cache',
     # Labels
     'build_label_name',
+    'build_private_collection_label',
     'categorize_labeled_items',
     'remove_labels_from_items',
     'add_labels_to_items',

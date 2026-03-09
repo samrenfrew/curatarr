@@ -54,6 +54,7 @@ from utils import (
     process_counters_from_cache,
     user_select_recommendations,
     build_label_name,
+    build_private_collection_label,
     categorize_labeled_items,
     remove_labels_from_items,
     add_labels_to_items,
@@ -392,6 +393,7 @@ class BaseRecommender(ABC):
         self.plex_tmdb_cache = {}
         self.tmdb_keywords_cache = {}
         self.label_dates = {}
+        self.collection_title_cache = None
         self.users = get_configured_users(self.config)
 
         # Set for tracking watched item IDs
@@ -585,6 +587,7 @@ class BaseRecommender(ABC):
                     self.plex_tmdb_cache = {str(k): v for k, v in watched_cache.get('plex_tmdb_cache', {}).items()}
                     self.tmdb_keywords_cache = {str(k): v for k, v in watched_cache.get('tmdb_keywords_cache', {}).items()}
                     self.label_dates = watched_cache.get('label_dates', {})
+                    self.collection_title_cache = watched_cache.get('collection_title_cache')
 
                     # Load watched IDs (key differs by media type)
                     watched_ids_key = f'watched_{self.media_type}_ids' if self.media_type == 'movie' else 'watched_show_ids'
@@ -614,7 +617,8 @@ class BaseRecommender(ABC):
             watched_ids=self.watched_ids,
             label_dates=getattr(self, 'label_dates', {}),
             watched_count=len(self.watched_ids) if self.media_type == 'movie' else self.cached_watched_count,
-            media_type=self.media_type
+            media_type=self.media_type,
+            collection_title_cache=getattr(self, 'collection_title_cache', None)
         )
 
     def get_recommendations(self) -> Dict[str, List[Dict]]:
@@ -885,7 +889,48 @@ class BaseRecommender(ABC):
         print(f"{GREEN}Collection now has top {len(top_candidates)} recommendations by score{RESET}")
         return [plex_item for item_id, (plex_item, score) in top_candidates]
 
-    def _sync_plex_collection(self, section, label_name: str, final_items: List) -> bool:
+    def _get_display_name_for_user(self, username: str) -> str:
+        """Get display name for user (or sensible fallback)."""
+        if self.user_preferences and username in self.user_preferences:
+            display_name = self.user_preferences[username].get('display_name')
+            if display_name:
+                return display_name
+        return username.capitalize()
+
+    def _build_collection_name(self, username: str, display_name: str) -> str:
+        """Build collection name from config template or default behavior."""
+        collections_cfg = self.config.get('collections', {})
+        template_key = 'movie_collection_title' if self.media_type == 'movie' else 'tv_collection_title'
+        custom_template = collections_cfg.get(template_key)
+
+        if custom_template:
+            # Custom templates always support ${user}, regardless of append_usernames.
+            return custom_template.replace('${user}', display_name).strip()
+
+        append_usernames = collections_cfg.get('append_usernames', False)
+        emoji = "🎬" if self.media_type == 'movie' else "📺"
+        if append_usernames:
+            return f"{emoji} {display_name} - Recommendation"
+        return f"{emoji} Recommended"
+
+    def _sync_user_collection_restrictions(self) -> None:
+        """Clean and re-apply user restrictions for private collections."""
+        users = self.users['plex_users'] or self.users['managed_users']
+        if not users:
+            return
+
+        private_collections = self.config.get('collections', {}).get('private_collections', True)
+        all_user_private_labels = {
+            username: build_private_collection_label(username)
+            for username in users
+        }
+        apply_user_label_restrictions(
+            self.config,
+            all_user_private_labels,
+            enable_private_collections=private_collections
+        )
+
+    def _sync_plex_collection(self, section, username: str, private_label_name: str, final_items: List) -> bool:
         """Create/update Plex collection with final recommendations.
 
         Returns:
@@ -895,16 +940,25 @@ class BaseRecommender(ABC):
             print(f"{YELLOW}No items to add to collection{RESET}")
             return False
 
-        username = label_name.replace('Recommended_', '')
-        if self.user_preferences and username in self.user_preferences and 'display_name' in self.user_preferences[username]:
-            display_name = self.user_preferences[username]['display_name']
-        else:
-            display_name = username.capitalize()
+        display_name = self._get_display_name_for_user(username)
+        collection_name = self._build_collection_name(username, display_name)
+        previous_titles = []
+        cached_title = getattr(self, 'collection_title_cache', None)
+        if cached_title and cached_title != collection_name:
+            previous_titles.append(cached_title)
 
-        emoji = "🎬" if self.media_type == 'movie' else "📺"
-        collection_name = f"{emoji} {display_name} - Recommendation"
-        success = update_plex_collection(section, collection_name, final_items, logger, label_name=label_name)
+        success = update_plex_collection(
+            section,
+            collection_name,
+            final_items,
+            logger,
+            private_label_name=private_label_name,
+            previous_titles=previous_titles
+        )
         if success:
+            self.collection_title_cache = collection_name
+            self._save_watched_cache()
+            emoji = "🎬" if self.media_type == 'movie' else "📺"
             cleanup_old_collections(section, collection_name, username, emoji, logger)
         return success
 
@@ -916,12 +970,14 @@ class BaseRecommender(ABC):
         """
         if not self.config.get('collections', {}).get('add_label', True):
             print(f"{YELLOW}Skipping collection creation (add_label is disabled in config){RESET}")
+            self._sync_user_collection_restrictions()
             return False
 
         recommended_items = recommended_items or []
 
         if not recommended_items:
             print(f"{YELLOW}No recommendations generated - collection not created{RESET}")
+            self._sync_user_collection_restrictions()
             return False
 
         if self.confirm_operations and recommended_items:
@@ -937,6 +993,8 @@ class BaseRecommender(ABC):
             append_usernames = self.config.get('collections', {}).get('append_usernames', False)
             users = self.users['plex_users'] or self.users['managed_users']
             label_name = build_label_name(base_label, users, self.single_user, append_usernames)
+            username = self.single_user or (users[0] if users else None)
+            private_label_name = build_private_collection_label(username) if username else None
 
             # Find items in Plex
             items_found, skipped = self._find_plex_items_for_recs(section, selected_items)
@@ -968,7 +1026,6 @@ class BaseRecommender(ABC):
             all_candidates = self._build_scored_candidates(unwatched_labeled, selected_items, items_found)
 
             # Filter by content rating if user has max_rating preference
-            username = self.single_user or (users[0] if users else None)
             max_rating = get_max_rating_for_user(self.user_preferences, username)
             if max_rating:
                 all_candidates = self._filter_candidates_by_rating(all_candidates, max_rating)
@@ -982,21 +1039,8 @@ class BaseRecommender(ABC):
             print(f"{GREEN}Successfully updated labels incrementally{RESET}")
 
             # Sync to Plex collection
-            success = self._sync_plex_collection(section, label_name, final_items)
-
-            # Apply user label restrictions if private_collections is enabled (default: true)
-            # Note: Only works for shared friends, not Plex Home managed users
-            if success and self.config.get('collections', {}).get('private_collections', True):
-                # Build dict of all user labels for exclude-based restrictions
-                # Each user's label excludes them from seeing other users' recommendations
-                all_user_labels = {}
-                users = self.users['plex_users'] or self.users['managed_users']
-
-                for username in users:
-                    user_label = build_label_name(base_label, users, username, append_usernames)
-                    all_user_labels[username] = user_label
-
-                apply_user_label_restrictions(self.config, all_user_labels)
+            success = self._sync_plex_collection(section, username, private_label_name, final_items)
+            self._sync_user_collection_restrictions()
 
             return success
 

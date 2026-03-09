@@ -205,31 +205,54 @@ users:
 ### General Settings
 ```yaml
 general:
-  auto_update: true           # Pull latest code from GitHub on run
-  log_retention_days: 7       # Keep logs for 7 days
+  auto_update: true
+  log_retention_days: 7
+  limit_plex_results: null    # null = defaults (50 movies / 20 TV)
+  confirm_operations: false
+  randomize_recommendations: true
+  normalize_counters: true
+
+quality_filters:
+  min_rating: 0.0
+  min_vote_count: 0
+
+collections:
+  add_label: true
+  label_name: Recommended
+  append_usernames: true
+  private_collections: true
+  stale_removal_days: 7
+  movie_collection_title: null   # e.g. "Movie recommendations for ${user}"
+  tv_collection_title: null      # e.g. "TV picks for ${user}"
+
+external_recommendations:
+  enabled: true
+  movie_limit: 50
+  show_limit: 20
+  min_relevance_score: 0.65
+  auto_open_html: false
+  min_votes: 50
+  max_iterations: 5
+  language: null
 ```
 
 ### Tuning (Optional)
 ```yaml
 movies:
-  limit_results: 50           # Recommendations per user
-  quality_filters:
-    min_rating: 5.0           # TMDB rating threshold
-    min_vote_count: 50        # Minimum votes
+  weights:
+    genre: 0.25
+    director: 0.05
+    actor: 0.20
+    keyword: 0.50
 
 recency_decay:
   enabled: true
-  days_0_30: 1.0              # Recent watches: full weight
-  days_31_90: 0.75            # 1-3 months: 75%
-  days_91_180: 0.50           # 3-6 months: 50%
-
-collections:
-  stale_removal_days: 7       # Rotate unwatched Plex collection labels
-
-external_recommendations:
-  min_relevance_score: 0.25   # See note below
-  auto_open_html: false       # Open HTML watchlist in browser after run
+  days_0_30: 1.0
+  days_31_90: 0.75
+  days_91_180: 0.50
 ```
+
+`tuning.yml` is now for **weights/scoring behavior only**. Operational settings (collections, external limits, enable flags, etc.) belong in `config.yml`.
 
 ### Trakt Integration (Optional)
 
@@ -375,6 +398,116 @@ export:
 
 **Setup:** Run `./run.sh` and follow Step 10, or manually create `config/simkl.yml`.
 
+### Complete Configuration Reference (All Options)
+
+All available options are listed in the example files under `config/*.example.yml`.
+
+#### `config/config.yml`
+- `plex.url`, `plex.token`, `plex.movie_library`, `plex.tv_library`
+- `tmdb.api_key`
+- `users.list`
+- `users.preferences.<username>.display_name`
+- `users.preferences.<username>.exclude_genres`
+- `users.preferences.<username>.streaming_services`
+- `users.preferences.<username>.max_rating`
+- `streaming_services`
+- `general.plex_only`
+- `general.limit_plex_results`
+- `general.confirm_operations`
+- `general.randomize_recommendations`
+- `general.normalize_counters`
+- `general.show_summary`
+- `general.show_genres`
+- `general.show_cast`
+- `general.show_director`
+- `general.show_language`
+- `general.show_rating`
+- `general.show_imdb_link`
+- `general.exclude_genre`
+- `general.log_retention_days`
+- `general.auto_update`
+- `quality_filters.min_rating`
+- `quality_filters.min_vote_count`
+- `collections.add_label`
+- `collections.label_name`
+- `collections.append_usernames`
+- `collections.private_collections`
+- `collections.stale_removal_days`
+- `collections.movie_collection_title` (supports `${user}`)
+- `collections.tv_collection_title` (supports `${user}`)
+- `external_recommendations.enabled`
+- `external_recommendations.movie_limit`
+- `external_recommendations.show_limit`
+- `external_recommendations.min_relevance_score`
+- `external_recommendations.auto_open_html`
+- `external_recommendations.min_votes`
+- `external_recommendations.max_iterations`
+- `external_recommendations.language`
+- `huntarr.sequel_huntarr`
+- `huntarr.horizon_huntarr`
+- `logging.level`
+
+#### `config/tuning.yml` (weights/scoring only)
+- `movies.weights.genre`
+- `movies.weights.director`
+- `movies.weights.actor`
+- `movies.weights.keyword`
+- `tv.weights.genre`
+- `tv.weights.studio`
+- `tv.weights.actor`
+- `tv.weights.keyword`
+- `recency_decay.enabled`
+- `recency_decay.days_0_30`
+- `recency_decay.days_31_90`
+- `recency_decay.days_91_180`
+- `recency_decay.days_181_365`
+- `recency_decay.days_365_plus`
+- `rating_multipliers.star_5`
+- `rating_multipliers.star_4`
+- `rating_multipliers.star_3`
+- `rating_multipliers.star_2`
+- `rating_multipliers.star_1`
+- `negative_signals.enabled`
+- `negative_signals.bad_ratings.enabled`
+- `negative_signals.bad_ratings.threshold`
+- `negative_signals.bad_ratings.cap_penalty`
+- `negative_signals.dropped_shows.enabled`
+- `negative_signals.dropped_shows.min_episodes_watched`
+- `negative_signals.dropped_shows.max_completion_percent`
+- `negative_signals.dropped_shows.penalty_multiplier`
+
+#### `config/trakt.yml`
+- `enabled`, `client_id`, `client_secret`, `access_token`, `refresh_token`
+- `export.enabled`, `export.auto_sync`, `export.list_prefix`, `export.privacy`, `export.user_mode`, `export.plex_users`
+- `import.enabled`, `import.merge_watch_history`, `import.exclude_watchlist`
+- `discovery.enabled`, `discovery.use_trending`, `discovery.use_popular`, `discovery.use_anticipated`, `discovery.use_recommendations`
+- `discovery.trending_limit`, `discovery.popular_limit`, `discovery.anticipated_limit`, `discovery.recommendations_limit`
+
+#### `config/sonarr.yml`
+- `enabled`, `url`, `api_key`
+- `auto_sync`, `user_mode`, `plex_users`
+- `root_folder`, `quality_profile`, `language_profile`, `series_type`, `season_folder`
+- `tag`, `append_usernames`
+- `monitor`, `monitor_option`, `search_missing`
+
+#### `config/radarr.yml`
+- `enabled`, `url`, `api_key`
+- `auto_sync`, `user_mode`, `plex_users`
+- `root_folder`, `quality_profile`, `minimum_availability`
+- `tag`, `append_usernames`
+- `monitor`, `search_for_movie`
+
+#### `config/mdblist.yml`
+- `enabled`, `api_key`
+- `auto_sync`, `user_mode`, `plex_users`
+- `list_prefix`, `replace_existing`
+
+#### `config/simkl.yml`
+- `enabled`, `client_id`, `access_token`
+- `import.enabled`, `import.include_anime`
+- `discovery.enabled`, `discovery.anime_focus`, `discovery.include_tv`, `discovery.include_movies`
+- `export.enabled`, `export.auto_sync`, `export.user_mode`, `export.plex_users`
+
 ### Huntarr: Collection Movie Finder
 
 Huntarr scans your Plex library for movies that belong to collections (trilogies, franchises, etc.) and helps you track what's missing and what's coming.
@@ -457,7 +590,7 @@ Weighted by recency (recent watches count more), user ratings (5-star content co
 curatarr/
 ├── config/                  # Configuration files
 │   ├── config.yml           # Main config (Plex, TMDB, users)
-│   ├── tuning.yml           # Scoring weights and display options
+│   ├── tuning.yml           # Scoring weights/behavior only
 │   ├── trakt.yml            # Trakt integration
 │   ├── sonarr.yml           # Sonarr integration
 │   ├── radarr.yml           # Radarr integration
@@ -521,7 +654,7 @@ No. Only adds labels to Plex metadata.
 At least 5 for meaningful recommendations.
 
 **Q: Can users see each other's recommendations?**
-No! By default, private collections are enabled—each user only sees their own recommendations, not other users'. The admin/server owner sees all (Plex limitation). Disable with `private_collections: false` in tuning.yml if you want shared visibility.
+No! By default, private collections are enabled—each user only sees their own recommendations, not other users'. The admin/server owner sees all (Plex limitation). Disable with `private_collections: false` in `config/config.yml` if you want shared visibility.
 
 **Q: What about new users with no history?**
 They're skipped until they have enough watch history.
