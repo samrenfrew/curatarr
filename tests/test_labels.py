@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 from utils.labels import (
     build_label_name,
+    build_private_collection_label,
     categorize_labeled_items,
     remove_labels_from_items,
     add_labels_to_items
@@ -114,6 +115,18 @@ class TestBuildLabelName:
         )
 
         assert result == "ToWatch_User1"
+
+
+class TestBuildPrivateCollectionLabel:
+    """Tests for build_private_collection_label()."""
+
+    def test_builds_private_label(self):
+        result = build_private_collection_label("Jason")
+        assert result == "PrivateCollection_Jason"
+
+    def test_sanitizes_special_characters(self):
+        result = build_private_collection_label("john doe@example")
+        assert result == "PrivateCollection_john_doe_example"
 
 
 class TestCategorizeLabeledItems:

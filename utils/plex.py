@@ -575,7 +575,9 @@ def update_plex_collection(
     collection_name: str,
     items: List[Any],
     logger: Any = None,
-    label_name: str = None
+    label_name: str = None,
+    private_label_name: str = None,
+    previous_titles: List[str] = None
 ) -> bool:
     """
     Create or update a Plex collection with items in the specified order.
@@ -585,7 +587,9 @@ def update_plex_collection(
         collection_name: Name of the collection to create/update
         items: List of Plex media items in desired order (best first)
         logger: Optional logger instance
-        label_name: Optional label to add to the collection itself (for private collections)
+        label_name: Deprecated: item label name (legacy fallback for deriving private label)
+        private_label_name: Optional explicit private collection label (preferred)
+        previous_titles: Optional previous collection names that should be renamed
 
     Returns:
         True if successful, False otherwise
@@ -595,15 +599,29 @@ def update_plex_collection(
             logger.warning(f"No items provided for collection: {collection_name}")
         return False
 
+    previous_titles = previous_titles or []
+
     try:
         existing_collection = None
         for collection in section.collections():
-            if collection.title == collection_name:
+            if collection.title == collection_name or collection.title in previous_titles:
                 existing_collection = collection
                 break
 
         target_collection = None
         if existing_collection:
+            if existing_collection.title != collection_name:
+                try:
+                    if hasattr(existing_collection, 'editTitle'):
+                        existing_collection.editTitle(collection_name)
+                    elif hasattr(existing_collection, 'edit'):
+                        existing_collection.edit(title=collection_name)
+                    if logger:
+                        logger.info(f"Renamed collection: {existing_collection.title} -> {collection_name}")
+                except plexapi.exceptions.PlexApiException as e:
+                    if logger:
+                        logger.warning(f"Could not rename collection to '{collection_name}': {e}")
+
             current_items = existing_collection.items()
             if current_items:
                 existing_collection.removeItems(current_items)
@@ -636,13 +654,15 @@ def update_plex_collection(
         # Add private label to collection itself for private collection filtering
         # Uses a DIFFERENT prefix than item labels so exclusions only affect collections
         # Items keep Recommended_* labels (visible to all), collections get PrivateCollection_*
-        if target_collection and label_name:
+        resolved_private_label = private_label_name
+        if not resolved_private_label and label_name and label_name.startswith('Recommended_'):
+            resolved_private_label = label_name.replace('Recommended_', 'PrivateCollection_')
+
+        if target_collection and resolved_private_label:
             try:
-                # Convert Recommended_username to PrivateCollection_username
-                private_label = label_name.replace('Recommended_', 'PrivateCollection_')
                 current_labels = [l.tag for l in target_collection.labels]
-                if private_label not in current_labels:
-                    target_collection.addLabel(private_label)
+                if resolved_private_label not in current_labels:
+                    target_collection.addLabel(resolved_private_label)
             except plexapi.exceptions.PlexApiException as e:
                 if logger:
                     logger.warning(f"Could not add label to collection: {e}")
@@ -1055,9 +1075,76 @@ def get_plex_user_ids(plex, managed_users: List[str]) -> Dict[str, int]:
     return user_ids
 
 
+def _is_curatarr_restriction_label(label: str) -> bool:
+    """Check whether a Plex label restriction was created by Curatarr."""
+    normalized = (label or '').strip().lower()
+    return (
+        normalized == 'recommended' or
+        normalized.startswith('recommended_') or
+        normalized.startswith('privatecollection_')
+    )
+
+
+def _parse_filter_clauses(filter_value: str) -> List[str]:
+    """Split a Plex filter string into individual clauses."""
+    if not filter_value:
+        return []
+    return [clause.strip() for clause in str(filter_value).split('|') if clause.strip()]
+
+
+def _extract_filter_parts(filter_value: str) -> Tuple[List[str], List[str], bool]:
+    """
+    Extract non-label clauses and non-Curatarr label exclusions from a filter.
+
+    Returns:
+        Tuple of (other_clauses, label_exclusions, had_curatarr_labels)
+    """
+    other_clauses = []
+    label_exclusions = []
+    had_curatarr_labels = False
+
+    for clause in _parse_filter_clauses(filter_value):
+        if clause.lower().startswith('label!='):
+            labels = [label.strip() for label in clause[7:].split(',') if label.strip()]
+            for label in labels:
+                if _is_curatarr_restriction_label(label):
+                    had_curatarr_labels = True
+                    continue
+                if label not in label_exclusions:
+                    label_exclusions.append(label)
+        else:
+            other_clauses.append(clause)
+
+    return other_clauses, label_exclusions, had_curatarr_labels
+
+
+def _build_filter_value(other_clauses: List[str], label_exclusions: List[str]) -> str:
+    """Build Plex filter string from clauses and label exclusions."""
+    clauses = list(other_clauses)
+    if label_exclusions:
+        clauses.append(f"label!={','.join(label_exclusions)}")
+    return '|'.join(clauses)
+
+
+def _merge_filter_exclusions(filter_value: str, additional_labels: List[str]) -> str:
+    """Merge additional label exclusions into an existing filter string."""
+    other_clauses, label_exclusions, _ = _extract_filter_parts(filter_value)
+    for label in additional_labels:
+        if label not in label_exclusions:
+            label_exclusions.append(label)
+    return _build_filter_value(other_clauses, label_exclusions)
+
+
+def _remove_curatarr_labels_from_filter(filter_value: str) -> str:
+    """Remove Curatarr-managed labels from a Plex filter string."""
+    other_clauses, label_exclusions, _ = _extract_filter_parts(filter_value)
+    return _build_filter_value(other_clauses, label_exclusions)
+
+
 def apply_user_label_restrictions(
     config: Dict,
-    all_user_labels: Dict[str, str],
+    all_user_private_labels: Dict[str, str],
+    enable_private_collections: bool = True,
 ) -> bool:
     """
     Apply exclude restrictions so each user can't see other users' collections.
@@ -1075,18 +1162,15 @@ def apply_user_label_restrictions(
 
     Args:
         config: Configuration dict with plex token
-        all_user_labels: Dict mapping username to their Recommended_* label name
-                         e.g., {'Jason': 'Recommended_Jason', 'Sarah': 'Recommended_Sarah'}
-                         (converted to PrivateCollection_* internally for exclusions)
+        all_user_private_labels: Dict mapping username to their PrivateCollection_* label name
+                                 e.g., {'Jason': 'PrivateCollection_Jason', 'Sarah': 'PrivateCollection_Sarah'}
+        enable_private_collections: If True, apply excludes for other users.
+                                    If False, only clean existing Curatarr restriction labels.
 
     Returns:
         True if all restrictions applied successfully, False if any failed
     """
-    if not all_user_labels:
-        return True
-
-    # Only one user - nothing to hide from anyone
-    if len(all_user_labels) <= 1:
+    if not all_user_private_labels:
         return True
 
     plex_token = config['plex']['token']
@@ -1105,13 +1189,26 @@ def apply_user_label_restrictions(
         import xml.etree.ElementTree as ET
         root = ET.fromstring(response.content)
 
-        # Build user lookup: username -> user_id
+        # Build user lookup and carry current filters for cleanup.
         plex_users = {}
+        user_records = []
         for user_elem in root.findall('.//User'):
             user_id = user_elem.get('id')
             title = user_elem.get('title', '')
             username_attr = user_elem.get('username', '')
             email = user_elem.get('email', '')
+            filter_movies = user_elem.get('filterMovies', '') or ''
+            filter_television = user_elem.get('filterTelevision', '') or ''
+
+            if user_id:
+                user_records.append({
+                    'id': user_id,
+                    'title': title,
+                    'username': username_attr,
+                    'email': email,
+                    'filter_movies': filter_movies,
+                    'filter_television': filter_television,
+                })
 
             if title:
                 plex_users[title.lower()] = user_id
@@ -1122,8 +1219,10 @@ def apply_user_label_restrictions(
 
         logger.debug(f"Plex users available for restrictions: {list(plex_users.keys())}")
 
+        # Resolve configured users to Plex user IDs.
+        username_by_user_id = {}
         all_success = True
-        for username, user_label in all_user_labels.items():
+        for username in all_user_private_labels:
             # Admin can't have restrictions
             if username.lower() == admin_username:
                 logger.debug(f"Skipping restrictions for admin user: {username}")
@@ -1147,36 +1246,63 @@ def apply_user_label_restrictions(
                 all_success = False
                 continue
 
-            # Get labels to EXCLUDE (all other users' PrivateCollection labels)
-            # We exclude PrivateCollection_* (on collections) NOT Recommended_* (on items)
-            # This hides other users' collections but keeps items visible to everyone
-            exclude_labels = [
-                label.replace('Recommended_', 'PrivateCollection_')
-                for u, label in all_user_labels.items()
-                if u.lower() != username.lower()
-            ]
+            username_by_user_id[user_id] = username
 
-            if not exclude_labels:
-                continue  # Nothing to exclude
+        # Update users that are configured OR still contain legacy Curatarr labels.
+        for user_record in user_records:
+            user_id = user_record['id']
+            display_name = user_record.get('title') or user_record.get('username') or user_id
 
-            # Build filter string: label!=Label1,Label2,Label3
-            labels_str = ','.join(exclude_labels)
-            filter_value = f"label!={labels_str}"
+            # Skip admin user
+            if display_name and display_name.lower() == admin_username:
+                continue
 
-            # Apply restrictions via direct PUT to Plex API
+            current_movies = user_record.get('filter_movies', '')
+            current_tv = user_record.get('filter_television', '')
+
+            cleaned_movies = _remove_curatarr_labels_from_filter(current_movies)
+            cleaned_tv = _remove_curatarr_labels_from_filter(current_tv)
+
+            _, _, had_curatarr_movie = _extract_filter_parts(current_movies)
+            _, _, had_curatarr_tv = _extract_filter_parts(current_tv)
+            has_legacy_curatarr_labels = had_curatarr_movie or had_curatarr_tv
+
+            if user_id in username_by_user_id and enable_private_collections and len(username_by_user_id) > 1:
+                current_username = username_by_user_id[user_id]
+                exclude_labels = [
+                    private_label
+                    for username, private_label in all_user_private_labels.items()
+                    if username.lower() != current_username.lower()
+                ]
+                cleaned_movies = _merge_filter_exclusions(cleaned_movies, exclude_labels)
+                cleaned_tv = _merge_filter_exclusions(cleaned_tv, exclude_labels)
+                action_message = f"Applied exclusions for {current_username}: hiding labels {exclude_labels}"
+            else:
+                action_message = f"Cleaned Curatarr restriction labels for {display_name}"
+
+            should_update = (
+                user_id in username_by_user_id or
+                has_legacy_curatarr_labels
+            )
+            if not should_update:
+                continue
+
+            if cleaned_movies == current_movies and cleaned_tv == current_tv:
+                continue
+
             update_url = f"https://plex.tv/api/users/{user_id}"
             params = {
                 'X-Plex-Token': plex_token,
-                'filterMovies': filter_value,
-                'filterTelevision': filter_value
+                'filterMovies': cleaned_movies,
+                'filterTelevision': cleaned_tv
             }
 
             try:
                 put_response = requests.put(update_url, params=params)
                 put_response.raise_for_status()
-                print(f"{GREEN}Applied exclusions for {username}: hiding labels {exclude_labels}{RESET}")
+                print(f"{GREEN}{action_message}{RESET}")
             except requests.RequestException as e:
-                log_warning(f"Failed to apply restrictions for {username}: {e}")
+                log_warning(f"Failed to update restrictions for {display_name}: {e}")
                 all_success = False
 
         return all_success

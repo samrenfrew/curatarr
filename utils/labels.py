@@ -39,6 +39,17 @@ def build_label_name(base_label: str, users: List[str], single_user: str = None,
     return base_label
 
 
+def build_private_collection_label(username: str) -> str:
+    """
+    Build the private collection label for a specific user.
+
+    This label is applied to Plex collections (not items) and used in
+    user-specific exclude filters when private collections are enabled.
+    """
+    user_suffix = re.sub(r'\W+', '_', username.strip())
+    return f"PrivateCollection_{user_suffix}"
+
+
 def categorize_labeled_items(
     labeled_items: List,
     watched_ids: set,

@@ -1482,6 +1482,47 @@ class TestUpdatePlexCollectionAdvanced:
         assert result is False
         mock_logger.error.assert_called_once()
 
+    def test_updates_collection_found_by_previous_title(self):
+        """Test existing collection can be matched by cached previous title."""
+        from utils.plex import update_plex_collection
+
+        mock_existing = Mock()
+        mock_existing.title = "Old Custom Name"
+        mock_existing.items.return_value = []
+
+        mock_section = Mock()
+        mock_section.collections.return_value = [mock_existing]
+
+        result = update_plex_collection(
+            mock_section,
+            "New Custom Name",
+            [Mock()],
+            previous_titles=["Old Custom Name"]
+        )
+
+        assert result is True
+        mock_existing.addItems.assert_called_once()
+
+    def test_adds_explicit_private_label(self):
+        """Test explicit private label is added to collection."""
+        from utils.plex import update_plex_collection
+
+        mock_collection = Mock()
+        mock_collection.labels = []
+        mock_section = Mock()
+        mock_section.collections.return_value = []
+        mock_section.createCollection.return_value = mock_collection
+
+        result = update_plex_collection(
+            mock_section,
+            "Test Collection",
+            [Mock()],
+            private_label_name="PrivateCollection_Jason"
+        )
+
+        assert result is True
+        mock_collection.addLabel.assert_called_once_with("PrivateCollection_Jason")
+
 
 class TestCleanupOldCollectionsAdvanced:
     """Additional tests for cleanup_old_collections()."""
@@ -1820,8 +1861,8 @@ class TestApplyUserLabelRestrictions:
         }
 
         all_user_labels = {
-            'Jason': 'Recommended_Jason',
-            'Sarah': 'Recommended_Sarah'
+            'Jason': 'PrivateCollection_Jason',
+            'Sarah': 'PrivateCollection_Sarah'
         }
 
         result = apply_user_label_restrictions(config, all_user_labels)
@@ -1859,15 +1900,15 @@ class TestApplyUserLabelRestrictions:
         }
 
         all_user_labels = {
-            'AdminUser': 'Recommended_AdminUser',
-            'OtherUser': 'Recommended_OtherUser'
+            'AdminUser': 'PrivateCollection_AdminUser',
+            'OtherUser': 'PrivateCollection_OtherUser'
         }
 
         result = apply_user_label_restrictions(config, all_user_labels)
 
         assert result is True
-        # Should only be called once (for OtherUser, not AdminUser)
-        mock_put.assert_called_once()
+        # Only one non-admin configured user = nothing to exclude.
+        mock_put.assert_not_called()
 
     @patch('utils.plex.requests.put')
     @patch('utils.plex.requests.get')
@@ -1898,16 +1939,16 @@ class TestApplyUserLabelRestrictions:
         }
 
         all_user_labels = {
-            'KnownUser': 'Recommended_KnownUser',
-            'UnknownUser': 'Recommended_UnknownUser'
+            'KnownUser': 'PrivateCollection_KnownUser',
+            'UnknownUser': 'PrivateCollection_UnknownUser'
         }
 
         result = apply_user_label_restrictions(config, all_user_labels)
 
         # Returns False because one user wasn't found
         assert result is False
-        # But should still apply restrictions for KnownUser
-        mock_put.assert_called_once()
+        # KnownUser has nothing to update here.
+        mock_put.assert_not_called()
 
     @patch('utils.plex.MyPlexAccount')
     def test_handles_plex_api_error(self, mock_account_class):
@@ -1924,33 +1965,13 @@ class TestApplyUserLabelRestrictions:
 
         # Need multiple users to trigger API call (single user returns early)
         all_user_labels = {
-            'TestUser': 'Recommended_TestUser',
-            'OtherUser': 'Recommended_OtherUser'
+            'TestUser': 'PrivateCollection_TestUser',
+            'OtherUser': 'PrivateCollection_OtherUser'
         }
 
         result = apply_user_label_restrictions(config, all_user_labels)
 
         assert result is False
-
-    @patch('utils.plex.MyPlexAccount')
-    def test_returns_true_for_single_user(self, mock_account_class):
-        """Test that single user returns True (nothing to hide)."""
-        from utils.plex import apply_user_label_restrictions
-
-        config = {
-            'plex': {
-                'token': 'test_token'
-            }
-        }
-
-        # Only one user - no restrictions needed
-        all_user_labels = {'Jason': 'Recommended_Jason'}
-
-        result = apply_user_label_restrictions(config, all_user_labels)
-
-        assert result is True
-        # MyPlexAccount should not even be instantiated
-        mock_account_class.assert_not_called()
 
     @patch('utils.plex.MyPlexAccount')
     def test_returns_true_for_empty_labels(self, mock_account_class):
@@ -1998,16 +2019,53 @@ class TestApplyUserLabelRestrictions:
 
         # Use lowercase in the labels dict
         all_user_labels = {
-            'testuser': 'Recommended_testuser',
-            'anotheruser': 'Recommended_anotheruser'
+            'testuser': 'PrivateCollection_testuser',
+            'anotheruser': 'PrivateCollection_anotheruser'
         }
 
         result = apply_user_label_restrictions(config, all_user_labels)
 
         # Should still match TestUser despite case difference
-        # Returns False because 'anotheruser' wasn't found, but TestUser was processed
+        # Returns False because 'anotheruser' wasn't found.
         assert result is False
+        mock_put.assert_not_called()
+
+    @patch('utils.plex.requests.put')
+    @patch('utils.plex.requests.get')
+    @patch('utils.plex.MyPlexAccount')
+    def test_cleans_curatarr_labels_when_private_disabled(self, mock_account_class, mock_get, mock_put):
+        """Test cleanup removes legacy Curatarr labels but keeps other restrictions."""
+        from utils.plex import apply_user_label_restrictions
+
+        mock_account = Mock()
+        mock_account.username = 'AdminUser'
+        mock_account_class.return_value = mock_account
+
+        mock_get_response = Mock()
+        mock_get_response.content = b'''<MediaContainer>
+            <User id="123" title="Jason" username="jason" filterMovies="label!=Recommended,Kids" filterTelevision="label!=PrivateCollection_Sarah"/>
+        </MediaContainer>'''
+        mock_get_response.raise_for_status = Mock()
+        mock_get.return_value = mock_get_response
+
+        mock_put_response = Mock()
+        mock_put_response.raise_for_status = Mock()
+        mock_put.return_value = mock_put_response
+
+        config = {'plex': {'token': 'test_token'}}
+        all_user_labels = {'Jason': 'PrivateCollection_Jason'}
+
+        result = apply_user_label_restrictions(
+            config,
+            all_user_labels,
+            enable_private_collections=False
+        )
+
+        assert result is True
         mock_put.assert_called_once()
+        put_params = mock_put.call_args.kwargs['params']
+        assert put_params['filterMovies'] == 'label!=Kids'
+        assert put_params['filterTelevision'] == ''
 
 
 class TestContentRatingFilter:

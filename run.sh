@@ -301,12 +301,8 @@ else:
             ;;
     esac
 
-    # External Recommendations - optional (check config/tuning.yml or defaults to enabled)
-    if [ -f "config/tuning.yml" ]; then
-        EXT_ENABLED=$(python3 -c "import yaml; c=yaml.safe_load(open('config/tuning.yml')); print(c.get('external_recommendations', {}).get('enabled', True))" 2>/dev/null)
-    else
-        EXT_ENABLED="True"  # Defaults to enabled
-    fi
+    # External Recommendations - optional (defaults to enabled)
+    EXT_ENABLED=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('external_recommendations', {}).get('enabled', True))" 2>/dev/null)
     if [ "$EXT_ENABLED" = "True" ]; then
         echo -e "  ${GREEN}✓${NC} External Recommendations"
     else
@@ -376,7 +372,8 @@ main() {
 
     # Generate external recommendations (watchlist) or huntarr-only
     EXT_CHECK="true"
-    if [ -f "config/tuning.yml" ] && grep -A 2 "external_recommendations:" config/tuning.yml | grep -q "enabled: false" 2>/dev/null; then
+    EXT_ENABLED=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yml')); print(c.get('external_recommendations', {}).get('enabled', True))" 2>/dev/null)
+    if [ "$EXT_ENABLED" = "False" ]; then
         # Still run if huntarr-only even if external_recommendations disabled
         if [ -z "$HUNTARR_ONLY" ]; then
             EXT_CHECK="false"

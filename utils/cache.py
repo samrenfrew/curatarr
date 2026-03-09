@@ -112,7 +112,8 @@ def save_watched_cache(
     watched_ids: set,
     label_dates: Dict,
     watched_count: int,
-    media_type: str = 'movie'
+    media_type: str = 'movie',
+    collection_title_cache: str = None
 ) -> bool:
     """
     Save watched data cache to file.
@@ -148,6 +149,7 @@ def save_watched_cache(
             'tmdb_keywords_cache': {str(k): v for k, v in tmdb_keywords_cache.items()},
             id_key: list(watched_ids),
             'label_dates': label_dates,
+            'collection_title_cache': collection_title_cache,
             'last_updated': datetime.now().isoformat()
         }
 

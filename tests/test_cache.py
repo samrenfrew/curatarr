@@ -286,7 +286,8 @@ class TestSaveWatchedCache:
                 watched_ids,
                 label_dates,
                 watched_count=2,
-                media_type='movie'
+                media_type='movie',
+                collection_title_cache="🎬 Jason - Recommendation"
             )
 
             assert result is True
@@ -301,6 +302,7 @@ class TestSaveWatchedCache:
             assert 'watched_movie_ids' in loaded
             assert len(loaded['watched_movie_ids']) == 2
             assert loaded['label_dates'] == label_dates
+            assert loaded['collection_title_cache'] == "🎬 Jason - Recommendation"
         finally:
             os.unlink(cache_path)
 

@@ -24,8 +24,6 @@ import yaml
 TUNING_SECTIONS = [
     'movies',
     'tv',
-    'collections',
-    'external_recommendations',
     'recency_decay',
     'rating_multipliers',
     'negative_signals',
@@ -37,6 +35,9 @@ CORE_SECTIONS = [
     'tmdb',
     'users',
     'general',
+    'quality_filters',
+    'collections',
+    'external_recommendations',
     'streaming_services',
     'logging',
     'platform',

@@ -55,6 +55,8 @@ class TestNeedsMigration:
             'plex': {'url': 'http://localhost:32400'},
             'tmdb': {'api_key': 'abc'},
             'users': {'list': 'alice'},
+            'collections': {'add_label': True},
+            'external_recommendations': {'enabled': True},
         }
         assert needs_migration(config) is False
 
@@ -67,6 +69,7 @@ class TestExtractTuningConfig:
         config = {
             'movies': {'limit_results': 50},
             'tv': {'limit_results': 20},
+            'collections': {'add_label': True},
             'plex': {'url': 'test'},  # Should not be extracted
         }
 
@@ -74,6 +77,7 @@ class TestExtractTuningConfig:
 
         assert 'movies' in result
         assert 'tv' in result
+        assert 'collections' not in result
         assert 'plex' not in result
 
     def test_returns_empty_if_no_tuning(self):
